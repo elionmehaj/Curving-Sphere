@@ -3,14 +3,13 @@ import * as CANNON from "cannon-es";
 import { createWorld, createBallBody } from "./Physics";
 import {
   createRoadPiece,
-  buildStarfield,
   RoadPiece,
   PIECE_Z_LEN,
-  GAP_Z_LEN,
   SEGMENTS_AHEAD,
   SEGMENTS_BEHIND,
   GAP_EVERY,
 } from "./RoadGenerator";
+import { SpaceScene } from "./SpaceScene";
 
 export type GameState = "playing" | "dead";
 
@@ -42,7 +41,8 @@ export class Game {
   private nextX = 0;
   private xDrift = 0;
   private pieceCount = 0;
-  private starfield!: THREE.Points;
+  private spaceScene!: SpaceScene;
+  private roadGlowLight!: THREE.PointLight;
 
   constructor(
     container: HTMLDivElement,
@@ -71,30 +71,44 @@ export class Game {
       container.clientHeight || window.innerHeight
     );
     this.renderer.shadowMap.enabled = true;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.2;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x03010f);
-    this.scene.fog = new THREE.FogExp2(0x06021a, 0.012);
+    this.scene.fog = new THREE.FogExp2(0x04010e, 0.009);
 
     this.camera = new THREE.PerspectiveCamera(
-      60,
+      72,
       (container.clientWidth || window.innerWidth) /
         (container.clientHeight || window.innerHeight),
       0.1,
-      220
+      400
     );
 
     this.setupLighting();
     this.world = createWorld();
 
     const ballGeo = new THREE.SphereGeometry(0.5, 32, 32);
-    const ballMat = new THREE.MeshLambertMaterial({ color: 0x2266ff });
+    const ballMat = new THREE.MeshStandardMaterial({
+      color: 0x1155ff,
+      emissive: 0x0033cc,
+      emissiveIntensity: 0.4,
+      metalness: 0.6,
+      roughness: 0.3,
+    });
     this.ballMesh = new THREE.Mesh(ballGeo, ballMat);
     this.ballMesh.castShadow = true;
     this.scene.add(this.ballMesh);
 
+    const ballLight = new THREE.PointLight(0x2255ff, 1.5, 8);
+    this.ballMesh.add(ballLight);
+
+    this.roadGlowLight = new THREE.PointLight(0xff2200, 2.5, 18);
+    this.roadGlowLight.position.y = 1.0;
+    this.scene.add(this.roadGlowLight);
+
     this.ballBody = createBallBody(this.world);
-    this.starfield = buildStarfield(this.scene);
+    this.spaceScene = new SpaceScene(this.scene);
     this.generateInitialRoad();
 
     this.boundHandleKey = this.handleKey.bind(this);
@@ -107,24 +121,22 @@ export class Game {
   }
 
   private setupLighting() {
-    const ambient = new THREE.AmbientLight(0x8899cc, 0.5);
-    this.scene.add(ambient);
+    this.scene.add(new THREE.AmbientLight(0x223355, 0.6));
 
-    const dir = new THREE.DirectionalLight(0xaabbff, 1.1);
-    dir.position.set(10, 20, 10);
+    const dir = new THREE.DirectionalLight(0xaabbff, 0.8);
+    dir.position.set(5, 15, 5);
     dir.castShadow = true;
     dir.shadow.mapSize.width = 1024;
     dir.shadow.mapSize.height = 1024;
     dir.shadow.camera.near = 0.5;
-    dir.shadow.camera.far = 120;
-    dir.shadow.camera.left = -30;
-    dir.shadow.camera.right = 30;
-    dir.shadow.camera.top = 30;
-    dir.shadow.camera.bottom = -30;
+    dir.shadow.camera.far = 80;
+    dir.shadow.camera.left = -20;
+    dir.shadow.camera.right = 20;
+    dir.shadow.camera.top = 20;
+    dir.shadow.camera.bottom = -20;
     this.scene.add(dir);
 
-    const hemi = new THREE.HemisphereLight(0x330066, 0x000033, 0.3);
-    this.scene.add(hemi);
+    this.scene.add(new THREE.HemisphereLight(0x220044, 0x000011, 0.4));
   }
 
   private generateInitialRoad() {
@@ -146,8 +158,7 @@ export class Game {
       this.xDrift += (Math.random() - 0.5) * 0.1;
       this.xDrift = Math.max(-0.22, Math.min(0.22, this.xDrift));
       xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
-      const maxX = 16;
-      if (Math.abs(xEnd) > maxX) {
+      if (Math.abs(xEnd) > 16) {
         this.xDrift *= -0.6;
         xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
       }
@@ -155,18 +166,10 @@ export class Game {
       xEnd = this.nextX + (Math.random() - 0.5) * 3;
     }
 
-    const piece = createRoadPiece(
-      this.scene,
-      this.world,
-      this.nextX,
-      xEnd,
-      zStart,
-      isGap
-    );
-
+    const piece = createRoadPiece(this.scene, this.world, this.nextX, xEnd, zStart, isGap);
     this.pieces.push(piece);
     this.nextZ = piece.zEnd;
-    this.nextX = isGap ? xEnd : xEnd;
+    this.nextX = xEnd;
     this.pieceCount++;
   }
 
@@ -178,9 +181,7 @@ export class Game {
         this.scene.remove(old.mesh);
         old.mesh.geometry.dispose();
       }
-      if (old.physicsBody) {
-        this.world.removeBody(old.physicsBody);
-      }
+      if (old.physicsBody) this.world.removeBody(old.physicsBody);
     }
   }
 
@@ -193,9 +194,7 @@ export class Game {
 
   private jump() {
     if (this.state !== "playing") return;
-    if (Math.abs(this.ballBody.velocity.y) < 2.5) {
-      this.ballBody.velocity.y = 8;
-    }
+    if (Math.abs(this.ballBody.velocity.y) < 2.5) this.ballBody.velocity.y = 8;
   }
 
   private animate = (time: number) => {
@@ -206,10 +205,7 @@ export class Game {
 
     if (this.state === "playing") this.update(dt);
     this.updateCamera();
-
-    this.starfield.position.z = this.ballBody.position.z;
-    this.starfield.position.x = this.ballBody.position.x;
-
+    this.spaceScene.update(dt, this.ballBody.position.x, this.ballBody.position.z);
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -240,6 +236,8 @@ export class Game {
     this.ballMesh.position.copy(this.ballBody.position as unknown as THREE.Vector3);
     this.ballMesh.quaternion.copy(this.ballBody.quaternion as unknown as THREE.Quaternion);
 
+    this.roadGlowLight.position.set(ballPos.x, 1.0, ballPos.z + 3);
+
     this.distance += this.forwardSpeed * dt;
     this.onDistanceUpdate(Math.floor(this.distance));
 
@@ -257,9 +255,9 @@ export class Game {
     const bx = this.ballBody.position.x;
     const by = this.ballBody.position.y;
     const bz = this.ballBody.position.z;
-    const targetPos = new THREE.Vector3(bx, by + 5, bz - 10);
-    this.camera.position.lerp(targetPos, 0.1);
-    this.camera.lookAt(bx, by + 0.5, bz + 7);
+    const targetPos = new THREE.Vector3(bx, by + 1.8, bz - 3.5);
+    this.camera.position.lerp(targetPos, 0.12);
+    this.camera.lookAt(bx, by + 0.4, bz + 55);
   }
 
   private die() {
