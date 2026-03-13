@@ -1,13 +1,9 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
-import {
-  createWorld,
-  createBallBody,
-  createGroundBody,
-} from "./Physics";
+import { createWorld, createBallBody, createGroundBody } from "./Physics";
 import {
   createRoadSegment,
-  generateCurvedYaw,
+  nextCurveX,
   ROAD_WIDTH,
   SEGMENT_LENGTH,
   SEGMENTS_AHEAD,
@@ -20,6 +16,10 @@ export type GameState = "playing" | "dead";
 interface SegmentWithBody extends RoadSegment {
   physicsBody: CANNON.Body;
 }
+
+const BASE_FORWARD_SPEED = 4.8;
+const STEER_FORCE = 14;
+const MAX_LATERAL_SPEED = 6;
 
 export class Game {
   private renderer: THREE.WebGLRenderer;
@@ -35,14 +35,16 @@ export class Game {
   private onDistanceUpdate: (d: number) => void;
   private onStateChange: (s: GameState) => void;
   private animFrameId = 0;
-  private forwardSpeed = 8;
-  private lastSegEndX = 0;
-  private lastSegEndZ = 0;
-  private lastSegYaw = 0;
-  private segmentIndex = 0;
+  private forwardSpeed = BASE_FORWARD_SPEED;
   private container: HTMLDivElement;
   private lastTime = 0;
   private boundHandleKey: (e: KeyboardEvent) => void;
+  private boundResize: () => void;
+
+  private lastSegZ = 0;
+  private lastSegX = 0;
+  private xDrift = 0;
+  private segmentIndex = 0;
 
   constructor(
     container: HTMLDivElement,
@@ -52,12 +54,12 @@ export class Game {
     this.container = container;
     this.onDistanceUpdate = onDistanceUpdate;
     this.onStateChange = onStateChange;
+
     const canvas = document.createElement("canvas");
     const testCtx = canvas.getContext("webgl2") || canvas.getContext("webgl");
-    if (!testCtx) {
-      throw new Error("WebGL is not supported in this environment.");
-    }
+    if (!testCtx) throw new Error("WebGL is not supported in this environment.");
     container.appendChild(canvas);
+
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       canvas,
@@ -66,16 +68,20 @@ export class Game {
       context: testCtx as WebGLRenderingContext,
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+    this.renderer.setSize(
+      container.clientWidth || window.innerWidth,
+      container.clientHeight || window.innerHeight
+    );
     this.renderer.shadowMap.enabled = true;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000000);
-    this.scene.fog = new THREE.Fog(0x000000, 40, 100);
+    this.scene.fog = new THREE.Fog(0x000000, 50, 110);
 
     this.camera = new THREE.PerspectiveCamera(
       60,
-      container.clientWidth / container.clientHeight,
+      (container.clientWidth || window.innerWidth) /
+        (container.clientHeight || window.innerHeight),
       0.1,
       200
     );
@@ -94,17 +100,16 @@ export class Game {
     this.generateInitialRoad();
 
     this.boundHandleKey = this.handleKey.bind(this);
+    this.boundResize = this.onResize.bind(this);
     window.addEventListener("keydown", this.boundHandleKey);
     window.addEventListener("keyup", this.boundHandleKey);
-    window.addEventListener("resize", this.onResize.bind(this));
+    window.addEventListener("resize", this.boundResize);
 
     this.animate(0);
   }
 
   private setupLighting() {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
-    this.scene.add(ambient);
-
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
     const dir = new THREE.DirectionalLight(0xffffff, 1.0);
     dir.position.set(10, 20, 10);
     dir.castShadow = true;
@@ -120,79 +125,55 @@ export class Game {
   }
 
   private generateInitialRoad() {
-    this.lastSegEndX = 0;
-    this.lastSegEndZ = 0;
-    this.lastSegYaw = 0;
-
-    for (let i = 0; i < SEGMENTS_AHEAD + SEGMENTS_BEHIND; i++) {
+    this.lastSegZ = -SEGMENT_LENGTH;
+    this.lastSegX = 0;
+    this.xDrift = 0;
+    this.segmentIndex = 0;
+    for (let i = 0; i < SEGMENTS_AHEAD + SEGMENTS_BEHIND + 2; i++) {
       this.addNextSegment();
     }
   }
 
   private addNextSegment() {
-    const newYaw =
-      this.segmentIndex === 0
-        ? 0
-        : generateCurvedYaw(this.lastSegYaw);
-    const seg = createRoadSegment(
-      this.scene,
-      this.lastSegEndX,
-      this.lastSegEndZ,
-      newYaw
-    );
-    const physicsBody = createGroundBody(
-      this.world,
-      seg.centerX,
-      0,
-      seg.centerZ,
-      newYaw,
-      seg.width,
-      seg.length
-    );
+    const z = this.lastSegZ + SEGMENT_LENGTH;
+    let x = this.lastSegX;
+
+    if (this.segmentIndex > 2) {
+      const result = nextCurveX(this.lastSegX, this.xDrift);
+      x = result.x;
+      this.xDrift = result.drift;
+    }
+
+    const seg = createRoadSegment(this.scene, x, z);
+    const physicsBody = createGroundBody(this.world, x, 0, z, 0, ROAD_WIDTH, SEGMENT_LENGTH);
     this.segments.push({ ...seg, physicsBody });
-    this.lastSegEndX = seg.endX;
-    this.lastSegEndZ = seg.endZ;
-    this.lastSegYaw = newYaw;
+    this.lastSegZ = z;
+    this.lastSegX = x;
     this.segmentIndex++;
   }
 
   private removeOldSegments() {
-    const bx = this.ballBody.position.x;
-    const bz = this.ballBody.position.z;
-    while (this.segments.length > 0) {
-      const oldest = this.segments[0];
-      const dx = oldest.centerX - bx;
-      const dz = oldest.centerZ - bz;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist > SEGMENT_LENGTH * (SEGMENTS_BEHIND + 2)) {
-        this.scene.remove(oldest.mesh);
-        oldest.mesh.geometry.dispose();
-        (oldest.mesh.material as THREE.Material).dispose();
-        this.world.removeBody(oldest.physicsBody);
-        this.segments.shift();
-      } else {
-        break;
-      }
+    const ballZ = this.ballBody.position.z;
+    const cutoffZ = ballZ - SEGMENTS_BEHIND * SEGMENT_LENGTH;
+    while (this.segments.length > 0 && this.segments[0].centerZ < cutoffZ) {
+      const old = this.segments.shift()!;
+      this.scene.remove(old.mesh);
+      old.mesh.geometry.dispose();
+      (old.mesh.material as THREE.Material).dispose();
+      this.world.removeBody(old.physicsBody);
     }
   }
 
   private handleKey(e: KeyboardEvent) {
     const down = e.type === "keydown";
     this.keys[e.code] = down;
-
-    if (down && e.code === "Space") {
-      this.jump();
-    }
-
-    if (down && e.code === "KeyR" && this.state === "dead") {
-      this.restart();
-    }
+    if (down && e.code === "Space") this.jump();
+    if (down && e.code === "KeyR" && this.state === "dead") this.restart();
   }
 
   private jump() {
     if (this.state !== "playing") return;
-    const vel = this.ballBody.velocity;
-    if (Math.abs(vel.y) < 2) {
+    if (Math.abs(this.ballBody.velocity.y) < 2) {
       this.ballBody.velocity.y = 7;
     }
   }
@@ -201,109 +182,60 @@ export class Game {
     this.animFrameId = requestAnimationFrame(this.animate);
     const dt = Math.min((time - this.lastTime) / 1000, 0.05);
     this.lastTime = time;
-
     if (dt <= 0) return;
 
-    if (this.state === "playing") {
-      this.update(dt);
-    }
-
+    if (this.state === "playing") this.update(dt);
     this.updateCamera();
     this.renderer.render(this.scene, this.camera);
   };
 
   private update(dt: number) {
-    this.forwardSpeed = 8 + this.distance * 0.002;
+    this.forwardSpeed = BASE_FORWARD_SPEED + this.distance * 0.0012;
     const ballPos = this.ballBody.position;
 
-    const lookYaw = this.getCurrentPathYaw();
-    const forwardX = Math.sin(lookYaw);
-    const forwardZ = Math.cos(lookYaw);
-    const rightX = Math.cos(lookYaw);
-    const rightZ = -Math.sin(lookYaw);
+    this.ballBody.velocity.z = this.forwardSpeed;
 
-    const steerForce = 18;
     let lateralInput = 0;
-    if (this.keys["KeyA"] || this.keys["ArrowLeft"]) lateralInput -= 1;
-    if (this.keys["KeyD"] || this.keys["ArrowRight"]) lateralInput += 1;
+    if (this.keys["KeyA"] || this.keys["ArrowLeft"]) lateralInput = -1;
+    if (this.keys["KeyD"] || this.keys["ArrowRight"]) lateralInput = 1;
 
-    this.ballBody.applyForce(
-      new CANNON.Vec3(
-        forwardX * this.forwardSpeed * 3 + rightX * lateralInput * steerForce,
-        0,
-        forwardZ * this.forwardSpeed * 3 + rightZ * lateralInput * steerForce
-      ),
-      new CANNON.Vec3(ballPos.x, ballPos.y, ballPos.z)
-    );
+    if (lateralInput !== 0) {
+      this.ballBody.applyForce(
+        new CANNON.Vec3(lateralInput * STEER_FORCE, 0, 0),
+        new CANNON.Vec3(ballPos.x, ballPos.y, ballPos.z)
+      );
+    }
 
     const vx = this.ballBody.velocity.x;
-    const vz = this.ballBody.velocity.z;
-    const hspeed = Math.sqrt(vx * vx + vz * vz);
-    const maxHSpeed = this.forwardSpeed * 2.5;
-    if (hspeed > maxHSpeed) {
-      this.ballBody.velocity.x = (vx / hspeed) * maxHSpeed;
-      this.ballBody.velocity.z = (vz / hspeed) * maxHSpeed;
+    if (Math.abs(vx) > MAX_LATERAL_SPEED) {
+      this.ballBody.velocity.x = Math.sign(vx) * MAX_LATERAL_SPEED;
     }
 
     this.world.step(1 / 60, dt, 3);
 
     this.ballMesh.position.copy(this.ballBody.position as unknown as THREE.Vector3);
-    this.ballMesh.quaternion.copy(
-      this.ballBody.quaternion as unknown as THREE.Quaternion
-    );
+    this.ballMesh.quaternion.copy(this.ballBody.quaternion as unknown as THREE.Quaternion);
 
     this.distance += this.forwardSpeed * dt;
     this.onDistanceUpdate(Math.floor(this.distance));
 
-    if (ballPos.y < -5) {
-      this.die();
-    }
+    if (ballPos.y < -5) this.die();
 
     const lastSeg = this.segments[this.segments.length - 1];
-    const ahead =
-      Math.sqrt(
-        Math.pow(lastSeg.centerX - ballPos.x, 2) +
-          Math.pow(lastSeg.centerZ - ballPos.z, 2)
-      );
-    if (ahead < SEGMENT_LENGTH * SEGMENTS_AHEAD * 0.6) {
+    if (ballPos.z + SEGMENT_LENGTH * SEGMENTS_AHEAD * 0.7 > lastSeg.centerZ) {
       this.addNextSegment();
     }
 
     this.removeOldSegments();
   }
 
-  private getCurrentPathYaw(): number {
-    const bx = this.ballBody.position.x;
-    const bz = this.ballBody.position.z;
-
-    let closestSeg: SegmentWithBody | null = null;
-    let minDist = Infinity;
-    for (const seg of this.segments) {
-      const dx = seg.centerX - bx;
-      const dz = seg.centerZ - bz;
-      const d = Math.sqrt(dx * dx + dz * dz);
-      if (d < minDist) {
-        minDist = d;
-        closestSeg = seg;
-      }
-    }
-    return closestSeg ? closestSeg.yaw : 0;
-  }
-
   private updateCamera() {
     const bx = this.ballBody.position.x;
     const by = this.ballBody.position.y;
     const bz = this.ballBody.position.z;
-    const yaw = this.getCurrentPathYaw();
-    const backX = -Math.sin(yaw) * 8;
-    const backZ = -Math.cos(yaw) * 8;
-    const targetPos = new THREE.Vector3(
-      bx + backX,
-      by + 4.5,
-      bz + backZ
-    );
-    this.camera.position.lerp(targetPos, 0.12);
-    this.camera.lookAt(bx + Math.sin(yaw) * 4, by, bz + Math.cos(yaw) * 4);
+    const targetPos = new THREE.Vector3(bx, by + 5, bz - 9);
+    this.camera.position.lerp(targetPos, 0.1);
+    this.camera.lookAt(bx, by + 0.5, bz + 6);
   }
 
   private die() {
@@ -319,9 +251,8 @@ export class Game {
       this.world.removeBody(seg.physicsBody);
     }
     this.segments = [];
-    this.segmentIndex = 0;
     this.distance = 0;
-    this.forwardSpeed = 8;
+    this.forwardSpeed = BASE_FORWARD_SPEED;
 
     this.ballBody.position.set(0, 2, 0);
     this.ballBody.velocity.set(0, 0, 0);
@@ -345,6 +276,7 @@ export class Game {
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener("keydown", this.boundHandleKey);
     window.removeEventListener("keyup", this.boundHandleKey);
+    window.removeEventListener("resize", this.boundResize);
     this.renderer.dispose();
     if (this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
