@@ -13,7 +13,7 @@ import { SpaceScene } from "./SpaceScene";
 
 export type GameState = "playing" | "dead";
 
-const BASE_FORWARD_SPEED = 5.76;
+const BASE_FORWARD_SPEED = 8.64;
 const STEER_FORCE = 14;
 const MAX_LATERAL_SPEED = 6;
 
@@ -231,7 +231,7 @@ export class Game {
       this.ballBody.velocity.x = Math.sign(vx) * MAX_LATERAL_SPEED;
     }
 
-    this.world.step(1 / 60, dt, 3);
+    this.world.step(1 / 120, dt, 10);
 
     this.ballMesh.position.copy(this.ballBody.position as unknown as THREE.Vector3);
     this.ballMesh.quaternion.copy(this.ballBody.quaternion as unknown as THREE.Quaternion);

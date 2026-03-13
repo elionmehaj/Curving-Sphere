@@ -4,7 +4,7 @@ export function createWorld(): CANNON.World {
   const world = new CANNON.World();
   world.gravity.set(0, -20, 0);
   world.broadphase = new CANNON.SAPBroadphase(world);
-  (world.solver as CANNON.GSSolver).iterations = 10;
+  (world.solver as CANNON.GSSolver).iterations = 20;
   return world;
 }
 
