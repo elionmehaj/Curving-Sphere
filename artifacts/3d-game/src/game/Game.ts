@@ -3,6 +3,7 @@ import * as CANNON from "cannon-es";
 import { createWorld, createBallBody } from "./Physics";
 import {
   createRoadPiece,
+  roadMat,
   RoadPiece,
   PIECE_Z_LEN,
   SEGMENTS_AHEAD,
@@ -10,6 +11,7 @@ import {
   GAP_EVERY,
 } from "./RoadGenerator";
 import { SpaceScene } from "./SpaceScene";
+import { EnvironmentManager } from "./EnvironmentManager";
 
 export type GameState = "playing" | "dead";
 
@@ -41,8 +43,11 @@ export class Game {
   private nextX = 0;
   private xDrift = 0;
   private pieceCount = 0;
+
   private spaceScene!: SpaceScene;
+  private envManager!: EnvironmentManager;
   private roadGlowLight!: THREE.PointLight;
+  private fog!: THREE.FogExp2;
 
   constructor(
     container: HTMLDivElement,
@@ -75,14 +80,15 @@ export class Game {
     this.renderer.toneMappingExposure = 1.2;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x04010e, 0.009);
+    this.fog = new THREE.FogExp2(0x04010e, 0.009);
+    this.scene.fog = this.fog;
 
     this.camera = new THREE.PerspectiveCamera(
       72,
       (container.clientWidth || window.innerWidth) /
         (container.clientHeight || window.innerHeight),
       0.1,
-      400
+      420
     );
 
     this.setupLighting();
@@ -99,16 +105,24 @@ export class Game {
     this.ballMesh = new THREE.Mesh(ballGeo, ballMat);
     this.ballMesh.castShadow = true;
     this.scene.add(this.ballMesh);
-
-    const ballLight = new THREE.PointLight(0x2255ff, 1.5, 8);
-    this.ballMesh.add(ballLight);
+    this.ballMesh.add(new THREE.PointLight(0x2255ff, 1.5, 8));
 
     this.roadGlowLight = new THREE.PointLight(0xff2200, 2.5, 18);
     this.roadGlowLight.position.y = 1.0;
     this.scene.add(this.roadGlowLight);
 
     this.ballBody = createBallBody(this.world);
+
     this.spaceScene = new SpaceScene(this.scene);
+    this.envManager = new EnvironmentManager(
+      this.scene,
+      this.world,
+      roadMat,
+      this.fog,
+      this.roadGlowLight,
+      this.spaceScene
+    );
+
     this.generateInitialRoad();
 
     this.boundHandleKey = this.handleKey.bind(this);
@@ -122,7 +136,6 @@ export class Game {
 
   private setupLighting() {
     this.scene.add(new THREE.AmbientLight(0x223355, 0.6));
-
     const dir = new THREE.DirectionalLight(0xaabbff, 0.8);
     dir.position.set(5, 15, 5);
     dir.castShadow = true;
@@ -135,7 +148,6 @@ export class Game {
     dir.shadow.camera.top = 20;
     dir.shadow.camera.bottom = -20;
     this.scene.add(dir);
-
     this.scene.add(new THREE.HemisphereLight(0x220044, 0x000011, 0.4));
   }
 
@@ -205,14 +217,20 @@ export class Game {
 
     if (this.state === "playing") this.update(dt);
     this.updateCamera();
-    this.spaceScene.update(dt, this.ballBody.position.x, this.ballBody.position.z);
     this.renderer.render(this.scene, this.camera);
   };
 
   private update(dt: number) {
-    this.forwardSpeed = BASE_FORWARD_SPEED + this.distance * 0.0014;
     const ballPos = this.ballBody.position;
 
+    const { speedMultiplier } = this.envManager.update(
+      dt,
+      this.distance,
+      ballPos.x,
+      ballPos.z
+    );
+
+    this.forwardSpeed = (BASE_FORWARD_SPEED + this.distance * 0.0014) * speedMultiplier;
     this.ballBody.velocity.z = this.forwardSpeed;
 
     let lateralInput = 0;
@@ -238,10 +256,15 @@ export class Game {
 
     this.roadGlowLight.position.set(ballPos.x, 1.0, ballPos.z + 3);
 
+    // SpaceScene only updates when visible (level 1)
+    if (this.envManager["currentLevel"] === 1) {
+      this.spaceScene.update(dt, ballPos.x, ballPos.z);
+    }
+
     this.distance += this.forwardSpeed * dt;
     this.onDistanceUpdate(Math.floor(this.distance));
 
-    if (ballPos.y < -8) this.die();
+    if (ballPos.y < -10) this.die();
 
     const lastPiece = this.pieces[this.pieces.length - 1];
     if (ballPos.z + PIECE_Z_LEN * SEGMENTS_AHEAD * 0.65 > lastPiece.zEnd) {
@@ -281,6 +304,7 @@ export class Game {
     this.ballBody.velocity.set(0, 0, 0);
     this.ballBody.angularVelocity.set(0, 0, 0);
 
+    this.envManager.reset(0);
     this.generateInitialRoad();
     this.state = "playing";
     this.onStateChange("playing");

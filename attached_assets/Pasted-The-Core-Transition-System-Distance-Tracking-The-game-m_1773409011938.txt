@@ -1,0 +1,54 @@
+The Core Transition System
+Distance Tracking: The game must track the total distance rolled.
+
+Seamless Swapping: Do not reload the webpage or pause the game between levels. Use Three.js scene.fog, scene.background, and color material updates to smoothly transition the visuals while the ball keeps rolling.
+
+Primitive Assets Only: Do not load external .gltf or .obj files. Construct all environmental scenery using built-in Three.js primitives (Box, Cone, Sphere, Torus).
+
+2. Level 1: The Cosmic Approach (0m to 500m)
+Environment: A deep space void. Black background with scattered white particle stars.
+
+The Road: A glowing neon red path.
+
+The Goal Event (400m - 500m): At the 400m mark, spawn a massive blue and green SphereGeometry (Earth) far in the distance on the Z-axis. As the player rolls forward, this sphere should scale up rapidly to simulate falling towards it. At exactly 500m, the camera and ball must clip through the surface of this massive sphere, triggering the transition to Level 2.
+
+3. Level 2: Earth Surface (500m to 1000m)
+Environment Transition: The moment the player passes 500m, smoothly change the scene.background to sky blue. Add a light blue scene.fog to give atmospheric depth.
+
+The Road: Change the road segments to a bright, vibrant green, resembling a perfectly manicured grass pitch.
+
+Scenery: Modify the chunk generation. Alongside the track, start spawning "Trees" (a green ConeGeometry stacked on a brown CylinderGeometry) and "Houses" (a red ConeGeometry roof on a white BoxGeometry base) floating in the skybox next to the road.
+
+The Goal Event (950m - 1000m): The sky background begins to smoothly transition from sky blue to a dark, deep navy blue. The fog thickens.
+
+4. Level 3: The Deep Ocean (1000m to 1500m)
+Environment Transition: At 1000m, the background and fog become a murky, deep oceanic blue.
+
+The Road: Change the road color to a sandy yellow/tan.
+
+Scenery: Stop spawning trees/houses. Start spawning "Kelp" (tall, thin, twisting green cylinders) and "Submarines" (yellow capsules) floating alongside the track. Add a slow, floating particle effect in the water to simulate bubbles.
+
+The Goal Event (1450m - 1500m): Spawn a massive, glowing, slowly rotating purple TorusGeometry directly on the track at the 1500m mark to act as a cosmic portal.
+
+5. Level 4: The Moon (1500m to 2000m)
+Environment Transition: When the ball passes through the center of the purple Torus portal at 1500m, instantly snap the scene.background back to pitch black (no stars). Change the fog to a dusty, stark white.
+
+The Road: Change the road to a pale, dusty gray.
+
+Scenery: Spawn jagged lunar "Craters" (half-spheres resting next to the track) and gray rock formations.
+
+Physics Alteration: Crucial mechanics change. At 1500m, lower the Cannon.js global gravity value by 50% so the ball feels floaty and heavy when bouncing or dropping over road chunks.
+
+6. Level 5: Mars (2000m+)
+Environment Transition: At 2000m, a sudden dust storm hits. Change the background and thick fog to a rusty, vibrant orange/red.
+
+The Road: Dark, burnt orange segments.
+
+Scenery: Spawn massive, imposing red box primitives resembling ancient Martian ruins or steep canyons.
+
+Difficulty Spike: At this stage, increase the base forward automatic Z-velocity by an additional 30% to push the player's reflexes to the absolute limit.
+
+[Constraints for the AI]
+Write the logic modularly. Create an updateEnvironment(distance) function inside the animate() loop that handles these color, fog, and gravity changes using if/else if statements based on the Z position.
+
+Maintain all previous constraints: Vanilla JS, CDN imports for Three.js/Cannon-es, HTML overlay for the UI, and continuous road chunking (deleting old road segments behind the camera). Provide the complete, updated script.js file.

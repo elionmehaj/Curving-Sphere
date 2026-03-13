@@ -19,7 +19,7 @@ export interface RoadPiece {
 }
 
 const ROAD_THICKNESS = 0.3;
-const roadMat = new THREE.MeshStandardMaterial({
+export const roadMat = new THREE.MeshStandardMaterial({
   color: 0xdd1111,
   emissive: 0xcc0000,
   emissiveIntensity: 0.7,

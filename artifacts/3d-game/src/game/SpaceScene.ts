@@ -276,6 +276,17 @@ export class SpaceScene {
     this.explosions.push({ points: pts, velocities, timer: 0, duration: 0.7 + Math.random() * 0.4 });
   }
 
+  setVisible(v: boolean) {
+    this.bgSphere.visible = v;
+    this.nearStars.visible = v;
+    for (const u of this.ufos) u.group.visible = v;
+    for (const m of this.moons) m.mesh.visible = v;
+    for (const s of this.suns) s.mesh.visible = v;
+    for (const sl of this.sunLights) sl.light.visible = v;
+    for (const l of this.lasers) l.line.visible = v;
+    for (const e of this.explosions) e.points.visible = v;
+  }
+
   update(dt: number, ballX: number, ballZ: number) {
     const time = performance.now() * 0.001;
 
