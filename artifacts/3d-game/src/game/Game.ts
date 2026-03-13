@@ -5,6 +5,7 @@ import {
   createRoadPiece,
   RoadPiece,
   PIECE_Z_LEN,
+  GAP_Z_LEN,
   SEGMENTS_AHEAD,
   SEGMENTS_BEHIND,
   GAP_EVERY,
@@ -39,7 +40,6 @@ export class Game {
 
   private nextZ = 0;
   private nextX = 0;
-  private xDrift = 0;
   private pieceCount = 0;
   private spaceScene!: SpaceScene;
   private roadGlowLight!: THREE.PointLight;
@@ -139,10 +139,13 @@ export class Game {
     this.scene.add(new THREE.HemisphereLight(0x220044, 0x000011, 0.4));
   }
 
+  private roadX(z: number): number {
+    return 10 * Math.sin(z * 0.038) + 3.5 * Math.sin(z * 0.091 + 1.4);
+  }
+
   private generateInitialRoad() {
     this.nextZ = 0;
     this.nextX = 0;
-    this.xDrift = 0;
     this.pieceCount = 0;
     for (let i = 0; i < SEGMENTS_AHEAD + SEGMENTS_BEHIND + 2; i++) {
       this.spawnNextPiece();
@@ -151,24 +154,14 @@ export class Game {
 
   private spawnNextPiece() {
     const zStart = this.nextZ;
-    let xEnd = this.nextX;
     const isGap = this.pieceCount > 3 && this.pieceCount % GAP_EVERY === 0;
-
-    if (!isGap) {
-      this.xDrift += (Math.random() - 0.5) * 0.1;
-      this.xDrift = Math.max(-0.22, Math.min(0.22, this.xDrift));
-      xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
-      if (Math.abs(xEnd) > 16) {
-        this.xDrift *= -0.6;
-        xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
-      }
-    } else {
-      xEnd = this.nextX + (Math.random() - 0.5) * 3;
-    }
+    const zLen = isGap ? GAP_Z_LEN : PIECE_Z_LEN;
+    const zEnd = zStart + zLen;
+    const xEnd = this.roadX(zEnd);
 
     const piece = createRoadPiece(this.scene, this.world, this.nextX, xEnd, zStart, isGap);
     this.pieces.push(piece);
-    this.nextZ = piece.zEnd;
+    this.nextZ = zEnd;
     this.nextX = xEnd;
     this.pieceCount++;
   }
