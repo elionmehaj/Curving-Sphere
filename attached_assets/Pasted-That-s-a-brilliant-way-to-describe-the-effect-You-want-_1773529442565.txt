@@ -1,0 +1,55 @@
+That’s a brilliant way to describe the effect! You want the road to be vibrant red, but with that intense, glowing magenta/hot pink core light shining along the center, exactly like in the reference image.
+
+Here is the super ultra-detailed prompt you need. It combines every instruction we have discussed so far—the tech stack, the levels, the physics, and the curves—while adding the specific vibrant red coloring and the internal magenta glow you requested, and explicitly keeping the third-person camera perspective.
+
+Copy and paste this entirety into Replit:
+
+Act as an expert Three.js and Cannon.js game developer. ### [Context]
+I am building a 3D endless runner where a rolling football navigates a dynamically generating path in a cosmos-themed void. I am upgrading the existing prototype with advanced level-based transitions, increased road curviness, and specific, vibrant coloring and internal lighting for the road, based on image_3.png and image_4.png.
+
+[Instructions]
+Please rewrite the game logic, main loop, and road generation script to implement the following features seamlessly, maintaining the original third-person follow-camera perspective from image_3.png.
+
+1. Level & Environment Manager
+Create a modular system to seamlessly transition environment colors, fog, and track colors based on total Z-axis distance rolled, without reloading the scene:
+
+Level 1: Cosmic Space (0m - 499m): Dark space void (black background with scattered star particles). The red road must have a glowing, neon quality. (Standard gravity).
+
+Level 2: Earth Surface (500m - 999m): Seamlessly transition (using THREE.Color.lerp) scene.background and scene.fog to Sky Blue. The new road chunks generated from 500m forward must be vibrant Grass Green.
+
+Level 3: Deep Ocean (1000m - 1499m): Smoothly transition background and fog to dark, murky Deep Blue. All new road chunks must be Sandy Yellow. Add water bubble particle effects.
+
+Level 4: The Moon (1500m - 1999m): Transition background to pitch Black (no stars) and fog to dusty stark White. All new road chunks are Lunar Gray. Spawn primitive crater shapes. Physics Change: Instant gravity reduction by 50% for floaty jumps.
+
+Level 5: Mars (2000m+): Transition background and fog to rusty, vibrant orange/red. All new road chunks are dark Burnt Orange. Difficulty Hike: Additional 30% automatic forward speed increase.
+
+2. Progressively Curvy Road Logic
+Modify the procedural road generation so the track becomes exponentially more challenging the further the player survives:
+
+Mathematical Curving: Generate the X-axis position of new road chunks using a variable sine wave function (e.g., Math.sin(distance * frequency) * amplitude).
+
+Difficulty Scaling: Continuously increase the wave's amplitude and frequency based on total distance, making the sweeping turns much wider and the transitions faster and sharper over time.
+
+3. Advanced Football Texturing & Gloss
+Enhance the player sphere (football). Ensure the existing black and white hexagonal pattern has a deep, high-gloss blue tint with high-specularity reflections (as requested, referencing image_4.png).
+
+4. Advanced Road Coloring & Internal Glow (Ref. image_4.png)
+This is a critical visual constraint.
+
+Road Material: The road segments must be a vibrant, saturated red-scarlet material (as requested, referencing image_4.png).
+
+Internal Glow Effect: You must create an internal lighting system for the road. The red road geometry must appear to be illuminated from within, with a strong, glowing, central channel of intense hot-pink and magenta light (matching image_4.png), making the entire path radiate that coloring. This is not just a light on the road, but light coming from the core of the vibrant red path.
+
+5. Enhanced Space Background & Void Battle
+Upgrade the Level 1 void. Fill the dark cosmic void with detailed glowing nebulae, various sizes of crescent and full moons, bright suns, and fleets of detailed UFOs and spaceships engaged in a visible battle (with laser beams and explosions, referencing the visual richness of image_4.png).
+
+[Constraints & Technical Details]
+File Output: Provide the updated script.js containing all logic for track generation, the main loop, and the physics world.
+
+No External Assets: Continue to use only Three.js geometry primitives and basic materials.
+
+Smooth Transitions: Sky and fog color fades must occur over a 2 to 3-second window when a milestone is hit.
+
+Maintain Camera: Do not alter the third-person follow-camera perspective from image_3.png.
+
+Dynamic Generation: Old road chunks must be deleted behind the player, and color changes apply only to newly spawned chunks.

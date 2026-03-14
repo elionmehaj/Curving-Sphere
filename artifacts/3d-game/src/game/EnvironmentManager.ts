@@ -140,6 +140,7 @@ export class EnvironmentManager {
   private scene: THREE.Scene;
   private world: CANNON.World;
   private roadMat: THREE.MeshStandardMaterial;
+  private glowMat: THREE.MeshStandardMaterial;
   private fog: THREE.FogExp2;
   private roadGlowLight: THREE.PointLight;
   private spaceScene: SpaceScene;
@@ -164,11 +165,14 @@ export class EnvironmentManager {
   private roadColorTarget = new THREE.Color(0xdd1111);
   private roadEmissiveTarget = new THREE.Color(0xcc0000);
   private roadGlowTarget = new THREE.Color(0xff2200);
+  private stripColorTarget = new THREE.Color(0xff44cc);
+  private stripEmissiveTarget = new THREE.Color(0xff00bb);
 
   constructor(
     scene: THREE.Scene,
     world: CANNON.World,
     roadMat: THREE.MeshStandardMaterial,
+    glowMat: THREE.MeshStandardMaterial,
     fog: THREE.FogExp2,
     roadGlowLight: THREE.PointLight,
     spaceScene: SpaceScene
@@ -176,9 +180,14 @@ export class EnvironmentManager {
     this.scene = scene;
     this.world = world;
     this.roadMat = roadMat;
+    this.glowMat = glowMat;
     this.fog = fog;
     this.roadGlowLight = roadGlowLight;
     this.spaceScene = spaceScene;
+  }
+
+  isLevel(n: number): boolean {
+    return this.currentLevel === n;
   }
 
   update(dt: number, distance: number, ballX: number, ballZ: number): EnvResult {
@@ -250,6 +259,8 @@ export class EnvironmentManager {
         this.roadColorTarget.set(0xdd1111);
         this.roadEmissiveTarget.set(0xcc0000);
         this.roadGlowTarget.set(0xff2200);
+        this.stripColorTarget.set(0xff44cc);
+        this.stripEmissiveTarget.set(0xff00bb);
         break;
       case 2: {
         const t = distance > 950 ? Math.min((distance - 950) / 50, 1) : 0;
@@ -262,6 +273,8 @@ export class EnvironmentManager {
         this.roadColorTarget.set(0x44cc22);
         this.roadEmissiveTarget.set(0x228800);
         this.roadGlowTarget.set(0x22ff44);
+        this.stripColorTarget.set(0x88ffaa);
+        this.stripEmissiveTarget.set(0x44ff88);
         break;
       }
       case 3:
@@ -272,6 +285,8 @@ export class EnvironmentManager {
         this.roadColorTarget.set(0xddbb55);
         this.roadEmissiveTarget.set(0xaa8833);
         this.roadGlowTarget.set(0xddaa44);
+        this.stripColorTarget.set(0x00ffee);
+        this.stripEmissiveTarget.set(0x00ddcc);
         break;
       case 4:
         this.fogTargetColor.set(0xddddcc);
@@ -281,6 +296,8 @@ export class EnvironmentManager {
         this.roadColorTarget.set(0xccccaa);
         this.roadEmissiveTarget.set(0x999977);
         this.roadGlowTarget.set(0xddddaa);
+        this.stripColorTarget.set(0xbbccff);
+        this.stripEmissiveTarget.set(0x8899ff);
         break;
       case 5:
         this.fogTargetColor.set(0xcc4400);
@@ -290,6 +307,8 @@ export class EnvironmentManager {
         this.roadColorTarget.set(0xbb4411);
         this.roadEmissiveTarget.set(0x992200);
         this.roadGlowTarget.set(0xff6600);
+        this.stripColorTarget.set(0xff9944);
+        this.stripEmissiveTarget.set(0xff6600);
         break;
     }
 
@@ -297,6 +316,8 @@ export class EnvironmentManager {
     this.roadMat.color.lerp(this.roadColorTarget, s * 0.4);
     this.roadMat.emissive.lerp(this.roadEmissiveTarget, s * 0.4);
     this.roadGlowLight.color.lerp(this.roadGlowTarget, s * 0.4);
+    this.glowMat.color.lerp(this.stripColorTarget, s * 0.35);
+    this.glowMat.emissive.lerp(this.stripEmissiveTarget, s * 0.35);
   }
 
   private updateSpecialEvents(distance: number, ballZ: number, dt: number) {
@@ -437,5 +458,7 @@ export class EnvironmentManager {
     this.roadMat.color.set(0xdd1111);
     this.roadMat.emissive.set(0xcc0000);
     this.roadGlowLight.color.set(0xff2200);
+    this.glowMat.color.set(0xff44cc);
+    this.glowMat.emissive.set(0xff00bb);
   }
 }

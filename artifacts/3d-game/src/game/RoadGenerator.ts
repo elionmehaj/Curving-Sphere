@@ -10,6 +10,7 @@ export const GAP_EVERY = 9;
 
 export interface RoadPiece {
   mesh: THREE.Mesh | null;
+  glowMesh: THREE.Mesh | null;
   physicsBody: CANNON.Body | null;
   xStart: number;
   xEnd: number;
@@ -19,12 +20,25 @@ export interface RoadPiece {
 }
 
 const ROAD_THICKNESS = 0.3;
+const GLOW_HW = 0.38;
+
 export const roadMat = new THREE.MeshStandardMaterial({
   color: 0xdd1111,
   emissive: 0xcc0000,
   emissiveIntensity: 0.7,
   roughness: 0.6,
   metalness: 0.3,
+});
+
+export const glowMat = new THREE.MeshStandardMaterial({
+  color: 0xff44cc,
+  emissive: 0xff00bb,
+  emissiveIntensity: 2.2,
+  transparent: true,
+  opacity: 0.92,
+  roughness: 0.1,
+  metalness: 0.0,
+  depthWrite: false,
 });
 
 function pushQuad(
@@ -57,7 +71,7 @@ export function createRoadPiece(
   const zEnd = zStart + zLen;
 
   if (isGap) {
-    return { mesh: null, physicsBody: null, xStart, xEnd, zStart, zEnd, isGap: true };
+    return { mesh: null, glowMesh: null, physicsBody: null, xStart, xEnd, zStart, zEnd, isGap: true };
   }
 
   const hw = ROAD_WIDTH / 2;
@@ -91,6 +105,27 @@ export function createRoadPiece(
   mesh.receiveShadow = true;
   scene.add(mesh);
 
+  // Central magenta glow strip
+  const yGlow = 0.009;
+  const GL0: [number, number, number] = [xStart - GLOW_HW, yGlow, zStart];
+  const GR0: [number, number, number] = [xStart + GLOW_HW, yGlow, zStart];
+  const GL1: [number, number, number] = [xEnd - GLOW_HW, yGlow, zEnd];
+  const GR1: [number, number, number] = [xEnd + GLOW_HW, yGlow, zEnd];
+
+  const glowGeo = new THREE.BufferGeometry();
+  glowGeo.setAttribute(
+    "position",
+    new THREE.BufferAttribute(
+      new Float32Array([...GL0, ...GR0, ...GR1, ...GL1]),
+      3
+    )
+  );
+  glowGeo.setIndex([0, 1, 2, 0, 2, 3]);
+  glowGeo.computeVertexNormals();
+
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  scene.add(glowMesh);
+
   const cx = (xStart + xEnd) / 2;
   const cz = (zStart + zEnd) / 2;
   const dx = xEnd - xStart;
@@ -103,6 +138,5 @@ export function createRoadPiece(
   physicsBody.quaternion.setFromEuler(0, -rotY, 0);
   world.addBody(physicsBody);
 
-  return { mesh, physicsBody, xStart, xEnd, zStart, zEnd, isGap: false };
+  return { mesh, glowMesh, physicsBody, xStart, xEnd, zStart, zEnd, isGap: false };
 }
-
