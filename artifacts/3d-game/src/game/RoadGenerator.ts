@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
 
-export const ROAD_WIDTH = 3.5;
+export const ROAD_WIDTH = 6.5;
 export const PIECE_Z_LEN = 7;
 export const GAP_Z_LEN = 5;
 export const SEGMENTS_AHEAD = 35;

@@ -43,6 +43,7 @@ export class Game {
   private nextX = 0;
   private xDrift = 0;
   private pieceCount = 0;
+  private curvePhase = 0;
 
   private spaceScene!: SpaceScene;
   private envManager!: EnvironmentManager;
@@ -84,7 +85,7 @@ export class Game {
     this.scene.fog = this.fog;
 
     this.camera = new THREE.PerspectiveCamera(
-      72,
+      82,
       (container.clientWidth || window.innerWidth) /
         (container.clientHeight || window.innerHeight),
       0.1,
@@ -167,15 +168,17 @@ export class Game {
     const isGap = this.pieceCount > 3 && this.pieceCount % GAP_EVERY === 0;
 
     if (!isGap) {
-      this.xDrift += (Math.random() - 0.5) * 0.1;
-      this.xDrift = Math.max(-0.22, Math.min(0.22, this.xDrift));
+      this.curvePhase += 0.09 + (Math.random() - 0.5) * 0.015;
+      this.xDrift = Math.sin(this.curvePhase) * 0.55;
       xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
-      if (Math.abs(xEnd) > 16) {
-        this.xDrift *= -0.6;
+      const maxX = 18;
+      if (Math.abs(xEnd) > maxX) {
+        this.curvePhase += Math.PI;
+        this.xDrift = Math.sin(this.curvePhase) * 0.55;
         xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
       }
     } else {
-      xEnd = this.nextX + (Math.random() - 0.5) * 3;
+      xEnd = this.nextX + Math.sin(this.curvePhase) * 2;
     }
 
     const piece = createRoadPiece(this.scene, this.world, this.nextX, xEnd, zStart, isGap);
@@ -278,9 +281,9 @@ export class Game {
     const bx = this.ballBody.position.x;
     const by = this.ballBody.position.y;
     const bz = this.ballBody.position.z;
-    const targetPos = new THREE.Vector3(bx, by + 1.8, bz - 3.5);
-    this.camera.position.lerp(targetPos, 0.12);
-    this.camera.lookAt(bx, by + 0.4, bz + 55);
+    const targetPos = new THREE.Vector3(bx, by + 1.0, bz - 2.5);
+    this.camera.position.lerp(targetPos, 0.14);
+    this.camera.lookAt(bx, by - 0.1, bz + 90);
   }
 
   private die() {
@@ -304,6 +307,7 @@ export class Game {
     this.ballBody.velocity.set(0, 0, 0);
     this.ballBody.angularVelocity.set(0, 0, 0);
 
+    this.curvePhase = 0;
     this.envManager.reset(0);
     this.generateInitialRoad();
     this.state = "playing";
