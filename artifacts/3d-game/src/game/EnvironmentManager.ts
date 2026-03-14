@@ -420,10 +420,6 @@ export class EnvironmentManager {
     (this.bubbles!.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
   }
 
-  getCurrentRoadColor(): THREE.Color {
-    return this.roadMat.color.clone();
-  }
-
   reset(ballZ: number) {
     this.clearScenery();
     if (this.earth) { this.scene.remove(this.earth); this.earth = null; }

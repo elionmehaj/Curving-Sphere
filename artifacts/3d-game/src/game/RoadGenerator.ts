@@ -51,8 +51,7 @@ export function createRoadPiece(
   xStart: number,
   xEnd: number,
   zStart: number,
-  isGap: boolean,
-  spawnColor?: THREE.Color
+  isGap: boolean
 ): RoadPiece {
   const zLen = isGap ? GAP_Z_LEN : PIECE_Z_LEN;
   const zEnd = zStart + zLen;
@@ -88,17 +87,7 @@ export function createRoadPiece(
   geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(normals), 3));
   geometry.setIndex(indices);
 
-  const pieceMat = spawnColor
-    ? new THREE.MeshStandardMaterial({
-        color: spawnColor.clone(),
-        emissive: spawnColor.clone().multiplyScalar(0.7),
-        emissiveIntensity: 0.7,
-        roughness: 0.6,
-        metalness: 0.3,
-      })
-    : roadMat;
-
-  const mesh = new THREE.Mesh(geometry, pieceMat);
+  const mesh = new THREE.Mesh(geometry, roadMat);
   mesh.receiveShadow = true;
   scene.add(mesh);
 
