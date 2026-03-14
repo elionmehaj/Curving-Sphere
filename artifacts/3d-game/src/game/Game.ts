@@ -4,7 +4,6 @@ import { createWorld, createBallBody } from "./Physics";
 import {
   createRoadPiece,
   roadMat,
-  glowMat,
   RoadPiece,
   PIECE_Z_LEN,
   SEGMENTS_AHEAD,
@@ -19,59 +18,6 @@ export type GameState = "playing" | "dead";
 const BASE_FORWARD_SPEED = 8.64;
 const STEER_FORCE = 14;
 const MAX_LATERAL_SPEED = 6;
-
-function drawHexGrid(ctx: CanvasRenderingContext2D, R: number, size: number) {
-  const h = R * Math.sqrt(3);
-  ctx.lineWidth = 5;
-  for (let col = -1; col < 7; col++) {
-    for (let row = -1; row < 7; row++) {
-      const cx = col * R * 1.5;
-      const cy = row * h + (col % 2 === 0 ? 0 : h / 2);
-      const dark = (col * 3 + row * 7) % 11 < 2;
-      ctx.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const a = (i * Math.PI) / 3 - Math.PI / 6;
-        const x = cx + (R - 5) * Math.cos(a);
-        const y = cy + (R - 5) * Math.sin(a);
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      if (dark) {
-        ctx.fillStyle = "rgba(0,0,18,0.85)";
-        ctx.fill();
-      }
-      ctx.strokeStyle = "rgba(0,0,35,0.9)";
-      ctx.stroke();
-    }
-  }
-}
-
-function createFootballTexture(): THREE.CanvasTexture {
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
-
-  const grad = ctx.createRadialGradient(195, 175, 10, 256, 256, 310);
-  grad.addColorStop(0, "#55aaff");
-  grad.addColorStop(0.35, "#1155ee");
-  grad.addColorStop(0.8, "#0033cc");
-  grad.addColorStop(1, "#000a99");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-
-  drawHexGrid(ctx, 62, size);
-
-  const gloss = ctx.createRadialGradient(175, 150, 0, 200, 175, 165);
-  gloss.addColorStop(0, "rgba(255,255,255,0.55)");
-  gloss.addColorStop(0.5, "rgba(200,220,255,0.15)");
-  gloss.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = gloss;
-  ctx.fillRect(0, 0, size, size);
-
-  return new THREE.CanvasTexture(canvas);
-}
 
 export class Game {
   private renderer: THREE.WebGLRenderer;
@@ -95,6 +41,7 @@ export class Game {
 
   private nextZ = 0;
   private nextX = 0;
+  private xDrift = 0;
   private pieceCount = 0;
 
   private spaceScene!: SpaceScene;
@@ -137,7 +84,7 @@ export class Game {
     this.scene.fog = this.fog;
 
     this.camera = new THREE.PerspectiveCamera(
-      68,
+      72,
       (container.clientWidth || window.innerWidth) /
         (container.clientHeight || window.innerHeight),
       0.1,
@@ -147,21 +94,21 @@ export class Game {
     this.setupLighting();
     this.world = createWorld();
 
-    const footballTex = createFootballTexture();
+    const ballGeo = new THREE.SphereGeometry(0.5, 32, 32);
     const ballMat = new THREE.MeshStandardMaterial({
-      map: footballTex,
-      normalScale: new THREE.Vector2(0.4, 0.4),
-      metalness: 0.55,
-      roughness: 0.22,
-      envMapIntensity: 1.4,
+      color: 0x1155ff,
+      emissive: 0x0033cc,
+      emissiveIntensity: 0.4,
+      metalness: 0.6,
+      roughness: 0.3,
     });
-    this.ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 32), ballMat);
+    this.ballMesh = new THREE.Mesh(ballGeo, ballMat);
     this.ballMesh.castShadow = true;
     this.scene.add(this.ballMesh);
-    this.ballMesh.add(new THREE.PointLight(0x4488ff, 1.8, 9));
+    this.ballMesh.add(new THREE.PointLight(0x2255ff, 1.5, 8));
 
-    this.roadGlowLight = new THREE.PointLight(0xff00cc, 3.0, 16);
-    this.roadGlowLight.position.y = 0.6;
+    this.roadGlowLight = new THREE.PointLight(0xff2200, 2.5, 18);
+    this.roadGlowLight.position.y = 1.0;
     this.scene.add(this.roadGlowLight);
 
     this.ballBody = createBallBody(this.world);
@@ -171,7 +118,6 @@ export class Game {
       this.scene,
       this.world,
       roadMat,
-      glowMat,
       this.fog,
       this.roadGlowLight,
       this.spaceScene
@@ -205,15 +151,10 @@ export class Game {
     this.scene.add(new THREE.HemisphereLight(0x220044, 0x000011, 0.4));
   }
 
-  private sineX(pieceIndex: number): number {
-    const amplitude = Math.min(2.5 + (this.distance / 380) * 5.5, 14);
-    const frequency = 0.1 + Math.min(this.distance / 2000, 1) * 0.24;
-    return amplitude * Math.sin(pieceIndex * frequency);
-  }
-
   private generateInitialRoad() {
     this.nextZ = 0;
     this.nextX = 0;
+    this.xDrift = 0;
     this.pieceCount = 0;
     for (let i = 0; i < SEGMENTS_AHEAD + SEGMENTS_BEHIND + 2; i++) {
       this.spawnNextPiece();
@@ -222,13 +163,22 @@ export class Game {
 
   private spawnNextPiece() {
     const zStart = this.nextZ;
+    let xEnd = this.nextX;
     const isGap = this.pieceCount > 3 && this.pieceCount % GAP_EVERY === 0;
 
-    const xStart = this.nextX;
-    const xRaw = this.sineX(this.pieceCount + 1);
-    const xEnd = Math.max(-15, Math.min(15, xRaw));
+    if (!isGap) {
+      this.xDrift += (Math.random() - 0.5) * 0.1;
+      this.xDrift = Math.max(-0.22, Math.min(0.22, this.xDrift));
+      xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
+      if (Math.abs(xEnd) > 16) {
+        this.xDrift *= -0.6;
+        xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
+      }
+    } else {
+      xEnd = this.nextX + (Math.random() - 0.5) * 3;
+    }
 
-    const piece = createRoadPiece(this.scene, this.world, xStart, xEnd, zStart, isGap);
+    const piece = createRoadPiece(this.scene, this.world, this.nextX, xEnd, zStart, isGap);
     this.pieces.push(piece);
     this.nextZ = piece.zEnd;
     this.nextX = xEnd;
@@ -242,10 +192,6 @@ export class Game {
       if (old.mesh) {
         this.scene.remove(old.mesh);
         old.mesh.geometry.dispose();
-      }
-      if (old.glowMesh) {
-        this.scene.remove(old.glowMesh);
-        old.glowMesh.geometry.dispose();
       }
       if (old.physicsBody) this.world.removeBody(old.physicsBody);
     }
@@ -308,9 +254,10 @@ export class Game {
     this.ballMesh.position.copy(this.ballBody.position as unknown as THREE.Vector3);
     this.ballMesh.quaternion.copy(this.ballBody.quaternion as unknown as THREE.Quaternion);
 
-    this.roadGlowLight.position.set(ballPos.x, 0.6, ballPos.z + 2.5);
+    this.roadGlowLight.position.set(ballPos.x, 1.0, ballPos.z + 3);
 
-    if (this.envManager.isLevel(1)) {
+    // SpaceScene only updates when visible (level 1)
+    if (this.envManager["currentLevel"] === 1) {
       this.spaceScene.update(dt, ballPos.x, ballPos.z);
     }
 
@@ -331,9 +278,9 @@ export class Game {
     const bx = this.ballBody.position.x;
     const by = this.ballBody.position.y;
     const bz = this.ballBody.position.z;
-    const targetPos = new THREE.Vector3(bx, by + 3.5, bz - 8);
-    this.camera.position.lerp(targetPos, 0.1);
-    this.camera.lookAt(bx, by + 0.6, bz + 20);
+    const targetPos = new THREE.Vector3(bx, by + 1.8, bz - 3.5);
+    this.camera.position.lerp(targetPos, 0.12);
+    this.camera.lookAt(bx, by + 0.4, bz + 55);
   }
 
   private die() {
@@ -346,10 +293,6 @@ export class Game {
       if (p.mesh) {
         this.scene.remove(p.mesh);
         p.mesh.geometry.dispose();
-      }
-      if (p.glowMesh) {
-        this.scene.remove(p.glowMesh);
-        p.glowMesh.geometry.dispose();
       }
       if (p.physicsBody) this.world.removeBody(p.physicsBody);
     }
