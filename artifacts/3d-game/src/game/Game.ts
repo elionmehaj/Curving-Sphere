@@ -167,18 +167,33 @@ export class Game {
     const isGap = this.pieceCount > 3 && this.pieceCount % GAP_EVERY === 0;
 
     if (!isGap) {
-      this.xDrift += (Math.random() - 0.5) * 0.1;
+      // t goes from 0 (start) to 1 (at 2000m), driving increasing difficulty
+      const t = Math.min(this.distance / 2000, 1);
+
+      // Sine wave parameters grow with distance:
+      // amplitude: 2 at start → 18 at 2000m (wider sweeping turns)
+      // frequency: 0.012 at start → 0.055 at 2000m (faster direction changes)
+      const amplitude = 2 + t * 16;
+      const frequency = 0.012 + t * 0.043;
+
+      const sineX = Math.sin(zStart * frequency) * amplitude;
+
+      // At low distance, blend in random drift for variety;
+      // at high distance, the sine wave dominates fully.
+      const sineWeight = Math.min(t * 1.5, 1);
+      this.xDrift += (Math.random() - 0.5) * 0.1 * (1 - sineWeight * 0.8);
       this.xDrift = Math.max(-0.22, Math.min(0.22, this.xDrift));
-      xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
-      if (Math.abs(xEnd) > 16) {
-        this.xDrift *= -0.6;
-        xEnd = this.nextX + this.xDrift * PIECE_Z_LEN;
-      }
+      const randomX = this.nextX + this.xDrift * PIECE_Z_LEN;
+
+      xEnd = THREE.MathUtils.lerp(randomX, sineX, sineWeight);
+
+      if (Math.abs(xEnd) > 18) xEnd = Math.sign(xEnd) * 18;
     } else {
       xEnd = this.nextX + (Math.random() - 0.5) * 3;
     }
 
-    const piece = createRoadPiece(this.scene, this.world, this.nextX, xEnd, zStart, isGap);
+    const spawnColor = this.envManager.getCurrentRoadColor();
+    const piece = createRoadPiece(this.scene, this.world, this.nextX, xEnd, zStart, isGap, spawnColor);
     this.pieces.push(piece);
     this.nextZ = piece.zEnd;
     this.nextX = xEnd;
@@ -192,6 +207,11 @@ export class Game {
       if (old.mesh) {
         this.scene.remove(old.mesh);
         old.mesh.geometry.dispose();
+        if (Array.isArray(old.mesh.material)) {
+          (old.mesh.material as THREE.Material[]).forEach((m) => m.dispose());
+        } else {
+          old.mesh.material.dispose();
+        }
       }
       if (old.physicsBody) this.world.removeBody(old.physicsBody);
     }
@@ -293,6 +313,11 @@ export class Game {
       if (p.mesh) {
         this.scene.remove(p.mesh);
         p.mesh.geometry.dispose();
+        if (Array.isArray(p.mesh.material)) {
+          (p.mesh.material as THREE.Material[]).forEach((m) => m.dispose());
+        } else {
+          p.mesh.material.dispose();
+        }
       }
       if (p.physicsBody) this.world.removeBody(p.physicsBody);
     }
