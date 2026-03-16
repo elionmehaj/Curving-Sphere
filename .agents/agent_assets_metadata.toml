@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "v3JHrIXmJZBgHP-U6jWPi"
+uri = "file://attached_assets/game_report.md"
+type = "text"
+title = "Ball Roller 3D — Complete Technical & Experience Report"

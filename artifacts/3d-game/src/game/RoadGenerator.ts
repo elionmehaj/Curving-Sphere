@@ -6,7 +6,118 @@ export const PIECE_Z_LEN = 7;
 export const GAP_Z_LEN = 5;
 export const SEGMENTS_AHEAD = 35;
 export const SEGMENTS_BEHIND = 5;
-export const GAP_EVERY = 9;
+
+// Curvature threshold: absolute xDrift above this is considered "curved"
+const CURVE_DRIFT_THRESHOLD = 0.1;
+// Gap safety buffer: do not spawn collectibles within this many Z-units before a gap
+const GAP_SAFETY_BUFFER = PIECE_Z_LEN * 3;
+
+// --------------- Road Curvature Map ---------------
+interface SegmentRecord {
+  zStart: number;
+  zEnd: number;
+  xStart: number;
+  xEnd: number;
+  drift: number;   // absolute xDrift value at spawn time
+  isGap: boolean;
+}
+
+/**
+ * Rolling window of spawned road segment metadata.
+ * Game.ts registers each segment; EnvironmentManager queries it.
+ */
+export class RoadCurvatureMap {
+  private segments: SegmentRecord[] = [];
+
+  record(zStart: number, zEnd: number, xStart: number, xEnd: number, drift: number, isGap: boolean) {
+    this.segments.push({ zStart, zEnd, xStart, xEnd, drift, isGap });
+  }
+
+  /**
+   * Returns true if targetZ is:
+   *  – on a curved segment (|drift| > threshold)
+   *  – not a gap segment itself
+   *  – not within GAP_SAFETY_BUFFER ahead of any upcoming gap
+   */
+  isSafeAndCurved(targetZ: number): boolean {
+    let targetDrift = 0;
+    let onGap = false;
+    let nearUpcomingGap = false;
+
+    for (const seg of this.segments) {
+      if (targetZ >= seg.zStart && targetZ < seg.zEnd) {
+        targetDrift = seg.drift;
+        onGap = seg.isGap;
+      }
+      // Any gap that starts within the safety buffer ahead of targetZ
+      if (seg.isGap && seg.zStart > targetZ && seg.zStart < targetZ + GAP_SAFETY_BUFFER) {
+        nearUpcomingGap = true;
+      }
+    }
+
+    return !onGap && !nearUpcomingGap && targetDrift > CURVE_DRIFT_THRESHOLD;
+  }
+
+  /**
+   * Returns the linearly interpolated X center coordinate of the road at `targetZ`.
+   * Returns null if targetZ is out of bounds or on a gap.
+   */
+  getRoadCenterAtZ(targetZ: number): number | null {
+    for (const seg of this.segments) {
+      if (targetZ >= seg.zStart && targetZ < seg.zEnd) {
+        if (seg.isGap) return null;
+        
+        // Linear interpolation: how far along this segment is targetZ?
+        const t = (targetZ - seg.zStart) / (seg.zEnd - seg.zStart);
+        return seg.xStart + (seg.xEnd - seg.xStart) * t;
+      }
+    }
+    return null;
+  }
+
+  /** Prune records whose zEnd has fallen behind the current ballZ */
+  prune(behindZ: number) {
+    while (this.segments.length > 0 && this.segments[0].zEnd < behindZ) {
+      this.segments.shift();
+    }
+  }
+
+  reset() {
+    this.segments = [];
+  }
+}
+
+// --- Randomized gap scheduler ---
+const MIN_GAP_PIECES = 5;
+const MAX_GAP_PIECES = 15;
+
+export interface GapScheduler {
+  shouldGap(pieceCount: number, distance: number): boolean;
+  reset(): void;
+}
+
+export function createGapScheduler(): GapScheduler {
+  let piecesSinceLastGap = 0;
+  let nextGapIn = MIN_GAP_PIECES + Math.floor(Math.random() * (MAX_GAP_PIECES - MIN_GAP_PIECES + 1));
+
+  return {
+    shouldGap(pieceCount: number, distance: number): boolean {
+      const scaledMax = Math.max(MIN_GAP_PIECES, MAX_GAP_PIECES - Math.floor(distance / 250));
+      piecesSinceLastGap++;
+      if (pieceCount <= 3) return false;
+      if (piecesSinceLastGap >= nextGapIn) {
+        piecesSinceLastGap = 0;
+        nextGapIn = MIN_GAP_PIECES + Math.floor(Math.random() * (scaledMax - MIN_GAP_PIECES + 1));
+        return true;
+      }
+      return false;
+    },
+    reset() {
+      piecesSinceLastGap = 0;
+      nextGapIn = MIN_GAP_PIECES + Math.floor(Math.random() * (MAX_GAP_PIECES - MIN_GAP_PIECES + 1));
+    },
+  };
+}
 
 export interface RoadPiece {
   mesh: THREE.Mesh | null;
@@ -105,4 +216,3 @@ export function createRoadPiece(
 
   return { mesh, physicsBody, xStart, xEnd, zStart, zEnd, isGap: false };
 }
-

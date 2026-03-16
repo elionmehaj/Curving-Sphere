@@ -8,10 +8,13 @@ import {
   PIECE_Z_LEN,
   SEGMENTS_AHEAD,
   SEGMENTS_BEHIND,
-  GAP_EVERY,
+  GapScheduler,
+  createGapScheduler,
+  RoadCurvatureMap,
 } from "./RoadGenerator";
 import { SpaceScene } from "./SpaceScene";
-import { EnvironmentManager } from "./EnvironmentManager";
+import { EnvironmentManager, EnvResult } from "./EnvironmentManager";
+import { audioManager } from "./AudioManager";
 
 export type GameState = "playing" | "dead";
 
@@ -48,11 +51,18 @@ export class Game {
   private envManager!: EnvironmentManager;
   private roadGlowLight!: THREE.PointLight;
   private fog!: THREE.FogExp2;
+  private gapScheduler!: GapScheduler;
+  private curvatureMap!: RoadCurvatureMap;
+
+  private ambientLight!: THREE.AmbientLight;
+  private dirLight!: THREE.DirectionalLight;
+  private hemiLight!: THREE.HemisphereLight;
 
   constructor(
     container: HTMLDivElement,
     onDistanceUpdate: (d: number) => void,
-    onStateChange: (s: GameState) => void
+    onStateChange: (s: GameState) => void,
+    skinColor: number = 0x1155ff
   ) {
     this.container = container;
     this.onDistanceUpdate = onDistanceUpdate;
@@ -95,9 +105,14 @@ export class Game {
     this.world = createWorld();
 
     const ballGeo = new THREE.SphereGeometry(0.5, 32, 32);
+    
+    // Dim the emissive version slightly based on the base skinColor
+    const baseColor = new THREE.Color(skinColor);
+    const emissiveColor = baseColor.clone().multiplyScalar(0.5);
+
     const ballMat = new THREE.MeshStandardMaterial({
-      color: 0x1155ff,
-      emissive: 0x0033cc,
+      color: baseColor,
+      emissive: emissiveColor,
       emissiveIntensity: 0.4,
       metalness: 0.6,
       roughness: 0.3,
@@ -113,14 +128,33 @@ export class Game {
 
     this.ballBody = createBallBody(this.world);
 
-    this.spaceScene = new SpaceScene(this.scene);
+    // Gap scheduler + curvature map
+    this.gapScheduler = createGapScheduler();
+    this.curvatureMap = new RoadCurvatureMap();
+
+    // SpaceScene now receives world + ballBody for physics laser triggers
+    this.spaceScene = new SpaceScene(this.scene, this.world, this.ballBody);
+
+    // Wire laser-hit callback: drop ball out of world to trigger existing death logic
+    this.spaceScene.onLaserHit = () => {
+      if (this.state === "playing") {
+        this.ballBody.position.y = -20;
+      }
+    };
+
+    // EnvironmentManager receives ballBody + curvature map for safe collectible placement
     this.envManager = new EnvironmentManager(
       this.scene,
       this.world,
       roadMat,
       this.fog,
       this.roadGlowLight,
-      this.spaceScene
+      this.spaceScene,
+      this.ballBody,
+      this.curvatureMap,
+      this.ambientLight,
+      this.dirLight,
+      this.hemiLight
     );
 
     this.generateInitialRoad();
@@ -135,20 +169,24 @@ export class Game {
   }
 
   private setupLighting() {
-    this.scene.add(new THREE.AmbientLight(0x223355, 0.6));
-    const dir = new THREE.DirectionalLight(0xaabbff, 0.8);
-    dir.position.set(5, 15, 5);
-    dir.castShadow = true;
-    dir.shadow.mapSize.width = 1024;
-    dir.shadow.mapSize.height = 1024;
-    dir.shadow.camera.near = 0.5;
-    dir.shadow.camera.far = 80;
-    dir.shadow.camera.left = -20;
-    dir.shadow.camera.right = 20;
-    dir.shadow.camera.top = 20;
-    dir.shadow.camera.bottom = -20;
-    this.scene.add(dir);
-    this.scene.add(new THREE.HemisphereLight(0x220044, 0x000011, 0.4));
+    this.ambientLight = new THREE.AmbientLight(0x223355, 0.6);
+    this.scene.add(this.ambientLight);
+    
+    this.dirLight = new THREE.DirectionalLight(0xaabbff, 0.8);
+    this.dirLight.position.set(5, 15, 5);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.width = 1024;
+    this.dirLight.shadow.mapSize.height = 1024;
+    this.dirLight.shadow.camera.near = 0.5;
+    this.dirLight.shadow.camera.far = 80;
+    this.dirLight.shadow.camera.left = -20;
+    this.dirLight.shadow.camera.right = 20;
+    this.dirLight.shadow.camera.top = 20;
+    this.dirLight.shadow.camera.bottom = -20;
+    this.scene.add(this.dirLight);
+    
+    this.hemiLight = new THREE.HemisphereLight(0x220044, 0x000011, 0.4);
+    this.scene.add(this.hemiLight);
   }
 
   private generateInitialRoad() {
@@ -156,6 +194,8 @@ export class Game {
     this.nextX = 0;
     this.xDrift = 0;
     this.pieceCount = 0;
+    this.gapScheduler.reset();
+    this.curvatureMap.reset();
     for (let i = 0; i < SEGMENTS_AHEAD + SEGMENTS_BEHIND + 2; i++) {
       this.spawnNextPiece();
     }
@@ -164,7 +204,9 @@ export class Game {
   private spawnNextPiece() {
     const zStart = this.nextZ;
     let xEnd = this.nextX;
-    const isGap = this.pieceCount > 3 && this.pieceCount % GAP_EVERY === 0;
+
+    // Use randomized gap scheduler instead of static modulo
+    const isGap = this.gapScheduler.shouldGap(this.pieceCount, this.distance);
 
     if (!isGap) {
       this.xDrift += (Math.random() - 0.5) * 0.1;
@@ -179,6 +221,8 @@ export class Game {
     }
 
     const piece = createRoadPiece(this.scene, this.world, this.nextX, xEnd, zStart, isGap);
+    // Register segment in curvature map so EnvironmentManager can gate collectibles
+    this.curvatureMap.record(piece.zStart, piece.zEnd, piece.xStart, piece.xEnd, Math.abs(this.xDrift), isGap);
     this.pieces.push(piece);
     this.nextZ = piece.zEnd;
     this.nextX = xEnd;
@@ -223,11 +267,12 @@ export class Game {
   private update(dt: number) {
     const ballPos = this.ballBody.position;
 
-    const { speedMultiplier } = this.envManager.update(
+    const { speedMultiplier, iceSteerMultiplier } = this.envManager.update(
       dt,
       this.distance,
       ballPos.x,
-      ballPos.z
+      ballPos.z,
+      this.forwardSpeed
     );
 
     this.forwardSpeed = (BASE_FORWARD_SPEED + this.distance * 0.0014) * speedMultiplier;
@@ -238,15 +283,19 @@ export class Game {
     if (this.keys["KeyD"] || this.keys["ArrowRight"]) lateralInput = 1;
 
     if (lateralInput !== 0) {
+      // iceSteerMultiplier = 1.0 normally, 2.2 when icy
+      const effectiveForce = STEER_FORCE * iceSteerMultiplier;
       this.ballBody.applyForce(
-        new CANNON.Vec3(lateralInput * STEER_FORCE, 0, 0),
+        new CANNON.Vec3(lateralInput * effectiveForce, 0, 0),
         new CANNON.Vec3(ballPos.x, ballPos.y, ballPos.z)
       );
     }
 
     const vx = this.ballBody.velocity.x;
-    if (Math.abs(vx) > MAX_LATERAL_SPEED) {
-      this.ballBody.velocity.x = Math.sign(vx) * MAX_LATERAL_SPEED;
+    // Relax the lateral speed cap when icy so the player can slide further
+    const effectiveMaxLateral = MAX_LATERAL_SPEED * (iceSteerMultiplier > 1 ? iceSteerMultiplier : 1);
+    if (Math.abs(vx) > effectiveMaxLateral) {
+      this.ballBody.velocity.x = Math.sign(vx) * effectiveMaxLateral;
     }
 
     this.world.step(1 / 120, dt, 10);
@@ -258,7 +307,7 @@ export class Game {
 
     // SpaceScene only updates when visible (level 1)
     if (this.envManager["currentLevel"] === 1) {
-      this.spaceScene.update(dt, ballPos.x, ballPos.z);
+      this.spaceScene.update(dt, ballPos.x, ballPos.z, this.forwardSpeed);
     }
 
     this.distance += this.forwardSpeed * dt;
@@ -272,6 +321,8 @@ export class Game {
     }
 
     this.removeOldPieces();
+    // Prune curvature map entries that have fallen far behind
+    this.curvatureMap.prune(ballPos.z - SEGMENTS_BEHIND * PIECE_Z_LEN);
   }
 
   private updateCamera() {
@@ -285,6 +336,7 @@ export class Game {
 
   private die() {
     this.state = "dead";
+    audioManager.onDeath();
     this.onStateChange("dead");
   }
 
@@ -299,16 +351,21 @@ export class Game {
     this.pieces = [];
     this.distance = 0;
     this.forwardSpeed = BASE_FORWARD_SPEED;
+    this.state = "playing";
+    this.onDistanceUpdate(0);
+    this.onStateChange("playing");
 
-    this.ballBody.position.set(0, 2, 0);
+    this.ballBody.position.set(0, 5, 0);
     this.ballBody.velocity.set(0, 0, 0);
     this.ballBody.angularVelocity.set(0, 0, 0);
+    this.ballBody.quaternion.set(0, 0, 0, 1);
 
+    this.gapScheduler.reset();
+    this.curvatureMap.reset();
     this.envManager.reset(0);
+    this.spaceScene.reset();
     this.generateInitialRoad();
-    this.state = "playing";
-    this.onStateChange("playing");
-    this.onDistanceUpdate(0);
+    audioManager.onRestart();
   }
 
   private onResize() {

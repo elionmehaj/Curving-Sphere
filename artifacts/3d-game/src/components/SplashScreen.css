@@ -1,0 +1,48 @@
+.splash-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100vw;
+  height: 100vh;
+  background-color: #000000;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+}
+
+.fade-sequence {
+  animation: fadeOutSequence 4.0s ease-in-out forwards;
+}
+
+@keyframes fadeOutSequence {
+  0% { opacity: 0; transform: scale(0.95); }
+  20% { opacity: 1; transform: scale(1); }
+  80% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.05); }
+}
+
+.splash-text {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  text-align: center;
+}
+
+.splash-12 {
+  display: block;
+  font-size: 84px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-shadow: 0px 0px 15px rgba(255, 255, 255, 0.5);
+}
+
+.splash-brain-project {
+  display: block;
+  font-size: 32px;
+  font-weight: 300;
+  color: #00aaff;
+  letter-spacing: 0.3em;
+  margin-top: -5px;
+  text-shadow: 0px 0px 10px rgba(0, 170, 255, 0.4);
+}
